@@ -1,0 +1,203 @@
+# TimeRLM post-training: GRPO on the AnomalyXL generator (RLM text mode).
+#
+# This is the config behind the paper's RL row. Instead of a fixed parquet, the
+# train env synthesizes a fresh sample per task index on the fly
+# (`timeseries-qa-v1` + a `generator` block) at a FIXED generator difficulty, so
+# no sample repeats within a run. The model receives the series as `context.json`
+# in a host-local Python REPL (numpy + scipy, via the vendored `rlm` harness),
+# iterates over multiple turns, and states a single JSON answer. No images.
+#
+# The reward is the benchmark's own per-category scorer plus two cost penalties:
+# a group-aware token-expense penalty ([orchestrator.advantage.length_penalty])
+# and a flat -0.25 for exhausting the 15-turn budget without answering
+# (`forced_final_penalty` in environments/timeseries_qa_v1/.../taskset.py).
+#
+# Launch (from ./prime-rl, after `bash scripts/setup.sh`; see docs/REPRODUCE.md).
+# Always pass --no-sync so the trainer's flash-attn extra isn't pruned by an
+# implicit uv sync:
+#   uv run --no-sync rl @ ../configs/rl/anomalyxl_rlm_v5_ablation_fixed.toml
+# Smoke it first (2 steps, no wandb):
+#   uv run --no-sync rl @ ../configs/rl/anomalyxl_rlm_v5_ablation_fixed.toml --max-steps 2 \
+#     --trainer.wandb.offline true --orchestrator.wandb.offline true
+#
+# Notes:
+#  - Paths below are relative to ./prime-rl (i.e. `../` is the repo root).
+#  - model.name is the base Qwen/Qwen3.5-4B — RL cold-starts from base, with no
+#    SFT warm start. Text-only Qwen3_5ForCausalLM view, so no [model.vlm] block.
+#  - See the NEGATIVES SCHEDULE note below: the run is two phases, not one.
+
+max_steps = 400
+seq_len = 65536  # 64k (down from 128k): caps the rollout TOKEN window only. The
+                 # generator is unchanged (still synthesizes up to 131072-sample
+                 # series); long-series trajectories autocompact harder to fit this
+                 # window instead of overflowing. ~1.5-2x faster on the long tail.
+                 # Restore 131072 here for the full long-context window.
+
+output_dir = "outputs/anomalyxl-v5-fixed"
+
+# Disjoint train/inference GPUs (no colocation). Sized for a 4x RTX PRO 6000
+# (96 GB) box: 2 for the FSDP trainer (shards params/grads/optimizer for the
+# 64k context) + 2 for inference. Launch with CUDA_VISIBLE_DEVICES=0,1,2,3.
+# (At 64k there's headroom to try 3 inference + 1 trainer for more rollout
+# throughput, but the trainer-on-1-GPU fit isn't verified — keep 2/2 for now.)
+[deployment]
+num_train_gpus = 2
+num_infer_gpus = 2
+
+# Cold start from base Qwen3.5-4B (no SFT warm start). Full-parameter RL.
+[model]
+name = "Qwen/Qwen3.5-4B"
+
+# Pin the renderer explicitly to the matching `qwen3.5` renderer (the base id
+# auto-resolves too, but pinning keeps the token-for-token TITO path with loss
+# masks unambiguous).
+[orchestrator.renderer]
+name = "qwen3.5"
+
+[wandb]
+project = "timerlm"
+name = "anomalyxl-v5-ablation-fixed-qwen35-4b"
+
+[orchestrator]
+# 64x8 (was 128x4): same 512 rollouts/step, but gs=8 halves the probability of
+# zero-variance groups (all-same reward -> dropped by the zero_advantage filter,
+# which was killing ~50% of groups at gs=4) and doubles advantage-estimate quality.
+# v4.1: batch back up to 128 (was 64) at gs=8 -> 1024 rollouts/step. Bigger,
+# lower-variance gradient steps now that rollouts are cheap (15-turn cap).
+batch_size = 128
+group_size = 8
+# Explicit: when unset this resolves to batch_size (x oversampling_factor) — with
+# bs=64 that would silently HALVE rollout concurrency vs the old 128.
+max_inflight_rollouts = 128
+
+# v4: group-aware token-expense penalty ("try hard, fail fast"). Each reward is
+# reduced by coef * group_pass_rate * (completion_tokens / seq_len) BEFORE the
+# GRPO baseline: verbosity only costs in groups that are succeeding (never-solved
+# groups pay nothing, so exploration on hard tasks is not punished).
+[orchestrator.advantage]
+type = "default"
+
+[orchestrator.advantage.length_penalty]
+coef = 0.1
+gate_by_correctness = false
+
+[orchestrator.train.sampling]
+# Per-turn generation cap — RLM turns carry reasoning + code; don't cut mid-thought.
+max_completion_tokens = 4096
+
+# Train env: the v1 generator taskset at a FIXED difficulty θ. `num_tasks` is the
+# lazy index space the orchestrator sweeps (shuffled cursor) — at 100k it never
+# repeats within a 400-step run, so every batch is freshly synthesized.
+# `run_seed` rotates the whole stream. The host-local `rlm` harness (subprocess
+# runtime) owns execution.
+[[orchestrator.train.env]]
+taskset = { id = "timeseries-qa-v1", generator = { num_tasks = 100000, run_seed = 0 } }
+#
+# NEGATIVES SCHEDULE (two phases — the paper's recipe; see docs/REPRODUCE.md).
+# The generator defaults to the benchmark's 20% hard negatives. From a cold start
+# that rate is a low-effort attractor: the policy collapses onto always-"no
+# anomaly". So negatives are WITHHELD for the first 220 steps and re-introduced
+# after, by stopping the run and resuming from the step-220 checkpoint.
+#
+# Phase 1, steps 0-220 — launch with negatives OFF:
+#     export ANOMALYXL_P_PRESENT=1.0 ANOMALYXL_ALLCH_MIN_K=1
+#     uv run --no-sync rl @ ../configs/rl/anomalyxl_rlm_v5_ablation_fixed.toml
+# Phase 2, step 220 onward — stop, then resume from the step-220 checkpoint with
+#   the two vars UNSET, restoring the benchmark's 80/20 split.
+#
+# Both vars MUST be set in the launch environment of the `rl` session. Setting
+# them in the `harness.env` block below does NOT work: that block reaches the
+# rollout subprocess, while `anomalyxl` is imported — and reads them, at module
+# import — in the orchestrator's env-server process, which only inherits the
+# launch env. Setting them in the harness block silently yields zero negatives.
+#
+# Autocompaction: rlm summarizes its context (kernel state preserved) at this
+# token count instead of erroring with "prompt too long". MUST stay below
+# seq_len (65536) so it fires before the 64k window fills — with the generator
+# kept at full length, long-series trajectories compact harder here than at 128k.
+harness = { id = "timeseries-qa-v1", summarize_at_tokens = 45000, env = { RLM_MAX_TOKENS = "24576", RLM_MAX_OUTPUT = "8192", RLM_MAX_TURNS = "15" } }
+# summarize_at_tokens 55k->45k: 29% of rollouts were dying at context_length with an
+# unconditional 0 reward; earlier compaction leaves room to actually finish + answer.
+# env passthrough (harness env -> rollout subprocess -> upstream rlm engine):
+#   RLM_MAX_TOKENS=24576  completion-token budget per rollout (stop_reason
+#     "token_budget") — bounds the 2-5h tail (p90 was 127 min, 143k tokens) that
+#     held batch slots, aged the off-policy buffer, and mostly died at 0 anyway.
+#   RLM_MAX_OUTPUT=8192   truncates giant tool outputs — prevents mega-prints from
+#     blowing up the context AND the >1GiB HTTP request bodies (APIStatusError).
+
+# Online eval (every 20 steps) on the in-distribution precise VALIDATION split.
+# Kept on the validated v0 path (independent per-env from the v1 train env).
+# OOD transfer (LTAF ECG + Sleep-PSG) is evaluated externally after the run, not
+# online: it keeps the eval windows short and the dispatcher out of long
+# PREFER_EVAL phases. To re-enable it online, add the two envs commented below.
+#
+# `repo_or_path` takes a local directory OR a released HF shard (see
+# docs/REPRODUCE.md). The HF form needs no data prep, so it is the default here;
+# swap in "../anomalyXL/datasets/anomalyxl-precise-val" to use a locally
+# generated split instead.
+#
+# eval_size: the eval task pool is the FIRST eval_size rows of the shard
+# (anomalyxl.py:_split_dfs -> df.iloc[:eval_size], clamped to the row count); the
+# remainder becomes the train pool. eval_size=0 therefore means an EMPTY eval pool
+# and the env silently evaluates NOTHING. Here the 520-row validation split is cut
+# to a 100-row eval pool, from which num_examples=50 samples 50.
+[[orchestrator.eval.env]]
+id = "timeseries-qa"
+name = "anomalyxl-rlm-text-eval"
+args = { dataset = "anomalyxl", repo_or_path = "nz00shuuuu/AnomalyXL#Localize/val", mode = "rlm", use_image = false, use_local_executor = true, eval_size = 100, max_turns = 15 }
+
+# Optional OOD online eval. The generalization shards are 250 rows each, so
+# eval_size=250 puts all of them in the eval pool; num_examples=50 samples 50.
+# [[orchestrator.eval.env]]
+# id = "timeseries-qa"
+# name = "ltaf-ecg-gen-eval"
+# args = { dataset = "ltaf_anomaly", repo_or_path = "nz00shuuuu/anomalyxl-generalization#ltaf-anomaly", mode = "rlm", use_image = false, use_local_executor = true, eval_size = 250, max_turns = 15 }
+
+# [[orchestrator.eval.env]]
+# id = "timeseries-qa"
+# name = "sleep-psg-gen-eval"
+# args = { dataset = "sleep_anomaly", repo_or_path = "nz00shuuuu/anomalyxl-generalization#sleep-anomaly", mode = "rlm", use_image = false, use_local_executor = true, eval_size = 250, max_turns = 15 }
+
+[orchestrator.eval]
+interval = 20
+num_examples = 50
+
+[trainer.optim]
+# v4.1: 7e-6 (was 5e-6) alongside batch 64->128: the 2x batch halves gradient
+# noise, giving headroom for the larger step size. Grad-clip 1.0 unchanged.
+lr = 7e-6
+
+[trainer.model]
+optimization_dtype = "bfloat16"
+reduce_dtype = "bfloat16"
+optim_cpu_offload = true
+# Chunk the LM head along tokens so the seq_len x vocab logits tensor is never
+# fully materialized — essential at 128k, where a vanilla CE head would allocate
+# a >80 GiB logits tensor. "auto" enables it (RL picks an 8192-token chunk).
+fused_lm_head_token_chunk_size = "auto"
+
+[trainer.model.ac]
+mode = "full"
+
+[ckpt]
+# Save a full (resumable: model + optimizer) checkpoint every 5 steps so a kill,
+# hang, or harness reap resumes instead of restarting from zero. keep_last bounds
+# disk — only the 3 most recent step checkpoints are kept (older ones deleted).
+interval = 5
+keep_last = 3
+
+# Inference topology: NO managed [inference] section — the rl launcher skips its
+# single managed server and the orchestrator talks to TWO INDEPENDENT single-GPU
+# vLLM servers (ports 8000/8001, GPUs 2/3), launched by the resume script.
+#
+# History: vLLM-internal DP=2 deadlocked (shm_broadcast) -> we ran TP=2 (stable
+# but ~30-40% per-token all-reduce tax on a 4B dense model). Two separate server
+# PROCESSES have no engine-level coordination at all (no shm-broadcast path), and
+# prime-rl's client layer is natively multi-URL: one client per base_url,
+# least-loaded selection for train rollouts, round-robin for eval, and
+# update_weights fans out to ALL admin clients (utils/client.py).
+# The standalone server configs live next to the resume script
+# (inference_gpu2.toml / inference_gpu3.toml): tp=1, dp=1, same model +
+# qwen3_coder tool parser + filesystem weight_broadcast as before.
+[orchestrator.student.client]
+base_url = ["http://localhost:8000/v1", "http://localhost:8001/v1"]

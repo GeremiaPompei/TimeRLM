@@ -1,0 +1,32 @@
+sft/toto — the Toto baseline
+===========================
+
+This directory contains code developed at Datadog, redistributed here under the
+Apache License 2.0 (see LICENSE in this directory).
+
+    This product includes software developed at Datadog
+    (https://www.datadoghq.com/)
+    Copyright 2026 Datadog, Inc.
+
+Upstream: Toto-1.0-QA-Experimental (`toto-1.0-qa-experimental`), the TSFM-VLM
+hybrid released with ARFBench — https://github.com/Datadog/ARFBench
+
+Files originating from Datadog (Apache-2.0, original headers retained):
+
+    src/evaluation/eval_toto_vlm.py
+    src/model/toto_vlm_components.py
+    src/model/load_checkpoint.py
+    src/utils/inference_utils.py
+    src/utils/compute_statistics.py
+    src/utils/log_utils.py
+
+Files added by the TimeRLM authors (MIT, as per the repository root LICENSE):
+
+    train.py                        LoRA fine-tuning entrypoint
+    eval.py                         evaluation CLI
+    src/utils/prompt_test_benchmark.py
+
+The rest of this repository is MIT-licensed; see the LICENSE file at the
+repository root. Apache-2.0 is not copyleft, so redistributing these files here
+does not change the license of the surrounding work — it only requires that this
+notice, the license text, and the original file headers travel with them.

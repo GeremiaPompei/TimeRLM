@@ -1,0 +1,74 @@
+# ITFormer + Chronos-2 frozen encoder + Qwen3.5-4B — AnomalyXL precise variant.
+# multi_variable=true lets Chronos-2 expose GroupSelfAttention across channels.
+# Reproduces the ITFormer/precise row of the paper's TSLM baseline table.
+
+name: anomaly_xl_itformer_precise_chronos2_qwen35_4b
+seed: 42
+
+dataset:
+  name: anomaly_xl_precise
+  extra_kwargs:
+    variant: precise
+    train_dir: anomalyXL/datasets/anomalyxl-train/anomalyxl-precise
+
+model:
+  architecture: itformer
+
+  encoder:
+    type: chronos2
+    model_id: amazon/chronos-2
+    freeze: true
+    multi_variable: true
+
+  extra_kwargs:
+    it_d_model: 896
+    it_n_heads: 16
+    it_layers: 2
+    it_dropout: 0.1
+    prefix_num: 25
+    freeze_ts_encoder: true
+
+backbone:
+  name: qwen
+  model_id: Qwen/Qwen3.5-4B
+
+training:
+  backbone_training: lora
+  batch_size: 1
+  num_epochs: 5
+
+  learning_rate:
+    default: 1.0e-4
+
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  warmup_ratio: 0.03
+
+  scheduler:
+    type: cosine
+
+  early_stopping:
+    enabled: true
+    patience: 3
+    metric: val_loss
+    mode: min
+
+  logging:
+    log_every_n_steps: 10
+    wandb:
+      enabled: true
+      project: anomaly_xl_tslm
+
+  checkpointing:
+    save_every_n_steps: 0
+    save_best: true
+
+  dataloader:
+    num_workers: 2
+    prefetch_factor: 2
+    pin_memory: true
+
+runtime:
+  output_dir: results
+  run_name: anomaly_xl_itformer_precise_chronos2_qwen35_4b
+  max_samples: null

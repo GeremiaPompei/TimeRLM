@@ -1,0 +1,39 @@
+[project]
+name = "anomalyxl"
+description = "Synthetic ARFBench-shaped multivariate anomaly QA, scalable in length and channels"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.0",
+    "pyarrow>=15.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+# scripts/classical_baseline.py — the no-LLM detector baseline.
+classical = [
+    "scikit-learn>=1.4",
+    "ruptures>=1.1",
+    "stumpy>=1.12",
+]
+# scripts/export_anomalyxl_for_toto.py — renders the plots the Toto/ARFBench eval reads.
+toto = ["matplotlib>=3.8"]
+
+[project.scripts]
+anomalyxl = "anomalyxl.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = [
+  "anomalyxl/**/*.py",
+  "pyproject.toml",
+  "README.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

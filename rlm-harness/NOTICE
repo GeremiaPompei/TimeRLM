@@ -1,0 +1,30 @@
+rlm-harness
+===========
+
+This directory is a VENDORED COPY of `rlm`, the recursive language model CLI agent
+by Prime Intellect:
+
+    upstream:  https://github.com/PrimeIntellect-ai/rlm
+    commit:    476b598
+    license:   MIT (see LICENSE — Copyright (c) 2026 Prime Intellect)
+
+We vendor rather than depend on it so that the exact agent loop used to produce the
+paper's results is pinned in-tree and reproducible without a network fetch.
+
+Local modifications
+-------------------
+
+One feature was added on top of upstream @476b598:
+
+  * RLM_MAX_TURNS forced-finalize (`src/rlm/engine.py`). When the env var is set to
+    N > 0, the engine caps the episode at N turns. On the final allowed turn it
+    sends the request WITHOUT tools and injects a user notice beginning
+    "FINAL TURN: ...", so the model must commit a plain-text final answer rather
+    than continuing to call tools. TimeRLM uses N=15 during RL post-training, and
+    the injected notice is what the taskset's -0.25 `forced_final_penalty` reward
+    keys on (see environments/timeseries_qa_v1/timeseries_qa_v1/taskset.py).
+
+The patch is confined to the turn loop in `engine.py`; every other file is upstream
+as-is. Upstream's own repository scaffolding (CI workflows, pre-commit config, and
+agent-instruction files) has been removed, as it does not apply to a vendored
+subdirectory.

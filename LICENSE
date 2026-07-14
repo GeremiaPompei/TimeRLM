@@ -1,0 +1,44 @@
+MIT License
+
+Copyright (c) 2026 The TimeRLM Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This repository vendors third-party code and reproduces third-party prompt text:
+
+* `rlm-harness/` is a vendored copy of `rlm` by Prime Intellect (MIT).
+  See `rlm-harness/LICENSE` and `rlm-harness/NOTICE`.
+
+* `environments/timeseries_qa/rlm_env_vendored.py` is a frozen copy of the
+  `RLMEnv` module from `verifiers` (PrimeIntellect-ai/verifiers, MIT), taken
+  from the last commit before its removal upstream.
+
+* `environments/timeseries_qa/ts_datasets/arfbench.py` loads the ARFBench
+  benchmark (Datadog) and reproduces its Tier-2 prompt text and answer format
+  for comparability.
+
+* `sft/toto/` contains code developed at Datadog (Copyright 2026 Datadog, Inc.),
+  redistributed under the Apache License 2.0. See `sft/toto/LICENSE` and
+  `sft/toto/NOTICE` for the license text, the attribution, and the list of files
+  it covers.
+
+* Data under the generalization set is derived from PhysioNet recordings, which
+  retain their original licenses and data-use agreements.

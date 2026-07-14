@@ -1,0 +1,13 @@
+# Env + caches
+.venv/
+__pycache__/
+*.pyc
+.uv-cache/
+uv.lock
+
+# Built data + checkpoints + W&B
+/datasets/
+outputs/
+wandb/
+
+# Local helpers / scratch (we ran these but they're not part of the recipe)

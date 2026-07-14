@@ -1,0 +1,33 @@
+# prime-rl is installed into the repo by scripts/setup.sh; never commit it.
+/prime-rl/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Training / eval artifacts
+checkpoints/
+outputs/
+wandb/
+*.log
+
+scripts/*.sh
+!scripts/setup.sh
+
+# OS / editor
+.DS_Store
+
+# anomalyxl artifacts — parquet shards live on HF, not in git
+anomalyXL/datasets/
+
+# generalization-set generated artifacts — keep the generator code
+anomalyXL/generalization_set/datasets/
+anomalyXL/generalization_set/analysis/
+anomalyXL/generalization_set/analyze_anomaly_spacing.py
+
+# uv lockfiles
+uv.lock

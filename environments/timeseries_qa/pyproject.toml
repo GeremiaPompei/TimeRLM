@@ -1,0 +1,59 @@
+[project]
+name = "timeseries-qa"
+description = "Single-interface time-series question answering (text-mode single-turn, 0/1 reward)"
+tags = ["timeseries", "qa", "single-turn", "train", "eval"]
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "verifiers>=0.1.14",
+    "datasets>=2.19.0",
+    "pandas>=2.0,<3",
+    "huggingface-hub>=0.23",
+    "matplotlib>=3.7",
+    # The RLM data note promises numpy+scipy in the REPL; with the local
+    # executor the REPL runs in THIS venv, so they must be real deps here
+    # (pip_install_packages only covers Prime cloud sandboxes).
+    "numpy>=1.26",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build]
+include = [
+  "timeseries_qa.py",
+  "rlm.py",
+  "rlm_env_vendored.py",
+  "local_executor.py",
+  "ts_datasets/__init__.py",
+  "ts_datasets/base.py",
+  "ts_datasets/arfbench.py",
+  "ts_datasets/anomalyxl_coarse.py",
+  "ts_datasets/anomalyxl.py",
+  "ts_datasets/generalization.py",
+  "utils/__init__.py",
+  "utils/formatter.py",
+  "pyproject.toml",
+]
+
+[tool.verifiers.eval]
+num_examples = 750
+rollouts_per_example = 1
+
+# Share the single verifiers checkout with the RL side (prime-rl's submodule) so
+# eval and RL never skew versions again. The editable build can't read the
+# submodule's gitfile .git, so feed hatch-vcs the version explicitly (see the
+# matching block in prime-rl/pyproject.toml).
+[tool.uv.sources]
+verifiers = { path = "../../prime-rl/deps/verifiers", editable = true }
+
+[tool.uv.extra-build-variables]
+verifiers = { SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VERIFIERS = "0.1.15.dev396" }

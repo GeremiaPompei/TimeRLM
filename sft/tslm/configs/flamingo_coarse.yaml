@@ -1,0 +1,72 @@
+# Flamingo + Chronos-2 frozen encoder + Qwen3.5-4B — AnomalyXL coarse variant.
+# Trained on the coarse-paired shard projected from the 5k precise rows;
+# tested on the gold seed=42 coarse-paired release shard. Reproduces the
+# OpenTSLM-Flamingo/coarse row of the paper's TSLM baseline table.
+
+name: anomaly_xl_flamingo_coarse_chronos2_qwen35_4b
+seed: 42
+
+dataset:
+  name: anomaly_xl_coarse
+  extra_kwargs:
+    variant: coarse
+    train_dir: anomalyXL/datasets/anomalyxl-train/anomalyxl-coarse
+
+model:
+  architecture: flamingo
+
+  encoder:
+    type: chronos2
+    model_id: amazon/chronos-2
+    freeze: true
+
+  projector:
+    type: perceiver_resampler
+    num_latents: 64
+
+  extra_kwargs:
+    cross_attn_every_n_layers: 1
+    freeze_lm_embeddings: false
+
+backbone:
+  name: qwen
+  model_id: Qwen/Qwen3.5-4B
+
+training:
+  backbone_training: lora
+  batch_size: 1
+  num_epochs: 5
+
+  learning_rate:
+    default: 1.0e-4
+
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  warmup_ratio: 0.03
+
+  early_stopping:
+    enabled: true
+    patience: 3
+    metric: val_loss
+    mode: min
+
+  logging:
+    wandb:
+      enabled: true
+      project: anomaly_xl_tslm
+
+  checkpointing:
+    save_every_n_steps: 0
+    save_best: true
+    metric: val_loss
+    mode: min
+
+  dataloader:
+    num_workers: 2
+    prefetch_factor: 2
+    pin_memory: true
+
+runtime:
+  output_dir: results
+  run_name: anomaly_xl_flamingo_coarse_chronos2_qwen35_4b
+  max_samples: null
