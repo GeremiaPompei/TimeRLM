@@ -68,7 +68,7 @@ little as 0.006% of the series.
 
 Every item is posed twice over the identical signal: a **precise**, open-ended version
 scored by a continuous metric (temporal IoU, kind×IoU, relative error, set-matched F1,
-or a direction-and-lag composite), and a **coarse** multiple-choice projection. Holding
+or a direction-and-lag composite), and a **MCQ** multiple-choice projection. Holding
 the signal fixed isolates the effect of evidence-grounded scoring from that of the
 multiple-choice format, with no different-signal confounder.
 
